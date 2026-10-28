@@ -1,5 +1,6 @@
 package com.gymregistro.app;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -7,6 +8,12 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.webkit.JavascriptInterface;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
@@ -37,8 +44,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
 
-    private static final String PREFS = "gym_registro";
-    private static final String CLAVE_URL = "app_url";
+    static final String PREFS = "gym_registro";
+    static final String CLAVE_URL = "app_url";
 
     private WebView web;
     private ProgressBar progreso;
@@ -81,6 +88,10 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new ClienteWeb());
         web.setWebChromeClient(new ClienteChrome());
+        // Puente para que la web active las notificaciones de pago en este móvil
+        web.addJavascriptInterface(new PuenteApp(), "GymApp");
+        Avisos.crearCanal(this);
+        if (Avisos.hayDispositivo(this)) Avisos.programar(this);
 
         findViewById(R.id.reintentar).setOnClickListener(v -> cargarInicio());
         ((Button) findViewById(R.id.guardarEnlace)).setOnClickListener(v -> guardarEnlace());
@@ -92,8 +103,71 @@ public class MainActivity extends Activity {
             mostrarConfigurar();
         } else if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
-        } else {
+        } else if (!abrirDesdeNotificacion(getIntent())) {
             cargarInicio();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        abrirDesdeNotificacion(intent);
+    }
+
+    /** Al tocar "Ver perfil" en una notificación se abre directamente el perfil del cliente. */
+    private boolean abrirDesdeNotificacion(Intent intent) {
+        if (intent == null) return false;
+        String gym = intent.getStringExtra(Avisos.EXTRA_GYM), codigo = intent.getStringExtra(Avisos.EXTRA_CODIGO);
+        if (TextUtils.isEmpty(gym) || TextUtils.isEmpty(codigo) || TextUtils.isEmpty(urlBase)) return false;
+        intent.removeExtra(Avisos.EXTRA_CODIGO);
+        cargar(urlBase + "?g=" + Uri.encode(gym) + "&c=" + Uri.encode(codigo));
+        return true;
+    }
+
+    /* ---------- Puente JavaScript ↔ Android ---------- */
+    private class PuenteApp {
+        @JavascriptInterface
+        public boolean tieneDispositivo(String id) {
+            SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+            return id != null && id.equals(p.getString(Avisos.DEV_ID, "")) && !TextUtils.isEmpty(p.getString(Avisos.DEV_CLAVE, ""));
+        }
+
+        @JavascriptInterface
+        public String claveActual() {
+            return getSharedPreferences(PREFS, MODE_PRIVATE).getString(Avisos.DEV_CLAVE, "");
+        }
+
+        @JavascriptInterface
+        public void guardarDispositivo(String json) {
+            try {
+                JSONObject o = new JSONObject(json);
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString(Avisos.DEV_ID, o.optString("id"))
+                        .putString(Avisos.DEV_GYM, o.optString("gym"))
+                        .putString(Avisos.DEV_CLAVE, o.optString("clave"))
+                        .putString(Avisos.DEV_NOMBRE, o.optString("nombre"))
+                        .apply();
+            } catch (JSONException e) {
+                return;
+            }
+            runOnUiThread(() -> {
+                pedirPermisoNotificaciones();
+                Avisos.programar(MainActivity.this);
+                Avisos.revisarAhora(MainActivity.this);
+            });
+        }
+
+        @JavascriptInterface
+        public void borrarDispositivo() {
+            Avisos.olvidar(MainActivity.this);
+        }
+    }
+
+    private void pedirPermisoNotificaciones() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 77);
         }
     }
 
@@ -277,10 +351,17 @@ public class MainActivity extends Activity {
     }
 
     private void abrirCarne(String texto) {
-        // Caso 1: el QR trae el enlace completo de la plataforma (…/exec?g=IRON&c=GM-XXXXXX)
-        if (texto.startsWith("https://script.google.com/") && texto.contains("c=")) {
-            cargar(texto);
-            return;
+        // Caso 1: el QR trae un enlace con ?g=IRON&c=GM-XXXXXX. Se usan solo esos dos datos y se abren
+        // con el enlace de ESTA app (así funciona aunque el QR se haya generado con un enlace /dev o antiguo).
+        if (texto.startsWith("http")) {
+            Uri q = Uri.parse(texto);
+            String c = q.getQueryParameter("c"), g = q.getQueryParameter("g");
+            if (!TextUtils.isEmpty(c) && !TextUtils.isEmpty(urlBase)) {
+                String url = urlBase + "?c=" + Uri.encode(c.toUpperCase());
+                if (!TextUtils.isEmpty(g)) url += "&g=" + Uri.encode(g.toUpperCase());
+                cargar(url);
+                return;
+            }
         }
         // Caso 2: el QR trae solo "GIMNASIO CODIGO", por ejemplo "IRON GM-7K4QX9"
         Matcher m = Pattern.compile("^([A-Z0-9]{3,12})\\s+(GM-[A-Z0-9]{6})$").matcher(texto.toUpperCase());
