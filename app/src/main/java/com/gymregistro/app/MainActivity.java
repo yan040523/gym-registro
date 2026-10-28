@@ -54,6 +54,9 @@ public class MainActivity extends Activity {
     private String urlBase = "";
     private long ultimoAtras = 0;
     private boolean errorPrincipal = false;
+    /** Código escaneado esperando a que la página lo recoja (GymApp.tomarCodigo). */
+    private volatile String codigoPendiente = "";
+    private final android.os.Handler manejador = new android.os.Handler(android.os.Looper.getMainLooper());
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -161,6 +164,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void borrarDispositivo() {
             Avisos.olvidar(MainActivity.this);
+        }
+
+        /** La página recoge aquí el último código escaneado (y se borra al leerlo). */
+        @JavascriptInterface
+        public String tomarCodigo() {
+            String c = codigoPendiente;
+            codigoPendiente = "";
+            return c;
+        }
+
+        /** La página (por ejemplo, el modo puerta) pide abrir la cámara. */
+        @JavascriptInterface
+        public void escanear() {
+            runOnUiThread(MainActivity.this::abrirEscaner);
+        }
+
+        @JavascriptInterface
+        public void mostrarBotonQR(boolean visible) {
+            runOnUiThread(() -> escanear.setVisibility(visible && configurar.getVisibility() != View.VISIBLE ? View.VISIBLE : View.GONE));
         }
     }
 
@@ -351,6 +373,18 @@ public class MainActivity extends Activity {
     }
 
     private void abrirCarne(String texto) {
+        // Lo normal: se le pasa el código a la página abierta, que abre el perfil (o marca la entrada en modo puerta)
+        // sin recargar nada. Si en 3 segundos la página no lo recogió, se usa el método de respaldo.
+        codigoPendiente = texto;
+        manejador.postDelayed(() -> {
+            if (texto.equals(codigoPendiente)) {
+                codigoPendiente = "";
+                abrirCarneRecargando(texto);
+            }
+        }, 3000);
+    }
+
+    private void abrirCarneRecargando(String texto) {
         // Caso 1: el QR trae un enlace con ?g=IRON&c=GM-XXXXXX. Se usan solo esos dos datos y se abren
         // con el enlace de ESTA app (así funciona aunque el QR se haya generado con un enlace /dev o antiguo).
         if (texto.startsWith("http")) {

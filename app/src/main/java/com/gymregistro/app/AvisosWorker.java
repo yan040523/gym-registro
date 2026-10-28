@@ -72,8 +72,9 @@ public class AvisosWorker extends Worker {
             JSONObject c = items.optJSONObject(i);
             if (c == null) continue;
             int dias = c.optInt("dias", 99);
+            boolean cumple = "cumple".equals(c.optString("tipo"));
             if (dias < 0 || dias > 2) continue;
-            String tipo = dias == 0 ? "hoy" : "pronto";
+            String tipo = cumple ? "cumple" : (dias == 0 ? "hoy" : "pronto");
             String clavAviso = c.optString("codigo") + "|" + c.optString("proximoPago") + "|" + tipo;
             vigentes.add(clavAviso);
             if (avisados.contains(clavAviso)) continue;
@@ -121,7 +122,7 @@ public class AvisosWorker extends Worker {
         String telefono = c.optString("telefono");
         String mensaje = c.optString("mensaje");
         long monto = Math.round(c.optDouble("monto", 0));
-        int id = codigo.hashCode();
+        int id = codigo.hashCode() * 31 + ("cumple".equals(c.optString("tipo")) ? 7 : 0);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
 
         Intent perfil = new Intent(ctx, MainActivity.class)
@@ -137,10 +138,12 @@ public class AvisosWorker extends Worker {
             piWhats = PendingIntent.getActivity(ctx, id + 1, wa, flags);
         }
 
-        String titulo = dias == 0 ? "Hoy le toca pagar a " + nombre
+        boolean cumple = "cumple".equals(c.optString("tipo"));
+        String titulo = cumple ? "🎂 Hoy cumple años " + nombre
+                : dias == 0 ? "Hoy le toca pagar a " + nombre
                 : "A " + nombre + " le faltan " + dias + (dias == 1 ? " día" : " días") + " para pagar";
-        String texto = "Mensualidad " + monto + " " + moneda + " · " + codigo
-                + (piWhats != null ? " · Toca para avisarle por WhatsApp" : " · Sin teléfono registrado");
+        String texto = (cumple ? "Cumple " + c.optInt("edad") + " años · " + codigo : "Mensualidad " + monto + " " + moneda + " · " + codigo)
+                + (piWhats != null ? (cumple ? " · Toca para felicitarle por WhatsApp" : " · Toca para avisarle por WhatsApp") : " · Sin teléfono registrado");
 
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, Avisos.CANAL)
                 .setSmallIcon(R.drawable.ic_noti)
@@ -153,7 +156,7 @@ public class AvisosWorker extends Worker {
                 .setAutoCancel(true)
                 .setContentIntent(piWhats != null ? piWhats : piPerfil)
                 .addAction(0, "Ver perfil", piPerfil);
-        if (piWhats != null) b.addAction(0, "Enviar WhatsApp", piWhats);
+        if (piWhats != null) b.addAction(0, cumple ? "Felicitar" : "Enviar WhatsApp", piWhats);
 
         try {
             NotificationManagerCompat.from(ctx).notify(id, b.build());
