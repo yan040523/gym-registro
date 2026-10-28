@@ -71,6 +71,9 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
+        // Google trata distinto a los "WebView"; nos presentamos como el navegador Chrome normal del teléfono.
+        String ua = s.getUserAgentString();
+        if (ua != null) s.setUserAgentString(ua.replace("; wv)", ")").replace(" Version/4.0", ""));
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -170,15 +173,21 @@ public class MainActivity extends Activity {
         return nc != null && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
     }
 
-    /** Las páginas de Google Apps Script se quedan dentro de la app; el resto (WhatsApp, Sheets, etc.) se abre fuera. */
-    private boolean esDeLaApp(Uri u) {
-        String esquema = u.getScheme(), host = u.getHost();
-        if (esquema == null || host == null) return false;
-        if (!esquema.equals("https") && !esquema.equals("http")) return false;
-        return host.equals("script.google.com")
-                || host.endsWith(".googleusercontent.com")
-                || host.equals("accounts.google.com")
-                || host.equals("www.google.com");
+    /**
+     * Decide qué se abre FUERA de la app. Todo lo demás (Google Apps Script, sus redirecciones,
+     * marcos internos, about:blank, etc.) se queda SIEMPRE dentro de la app.
+     * Solo salen: WhatsApp, teléfono, correo, SMS, otras apps y la hoja de Google (docs.google.com).
+     */
+    private boolean debeAbrirseFuera(Uri u) {
+        String esquema = u.getScheme() == null ? "" : u.getScheme().toLowerCase();
+        String host = u.getHost() == null ? "" : u.getHost().toLowerCase();
+        if (esquema.equals("http") || esquema.equals("https")) {
+            return host.equals("wa.me") || host.equals("api.whatsapp.com") || host.equals("chat.whatsapp.com")
+                    || host.equals("docs.google.com") || host.equals("drive.google.com");
+        }
+        if (esquema.equals("about") || esquema.equals("data") || esquema.equals("blob")
+                || esquema.equals("javascript") || esquema.isEmpty()) return false;
+        return true; // tel:, mailto:, sms:, whatsapp:, intent:, etc.
     }
 
     private void abrirFuera(Uri u) {
@@ -192,8 +201,10 @@ public class MainActivity extends Activity {
     private class ClienteWeb extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            // Los marcos internos de la página nunca se sacan de la app.
+            if (!request.isForMainFrame()) return false;
             Uri u = request.getUrl();
-            if (esDeLaApp(u)) return false;
+            if (!debeAbrirseFuera(u)) return false;
             abrirFuera(u);
             return true;
         }
@@ -232,7 +243,7 @@ public class MainActivity extends Activity {
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
                     Uri u = request.getUrl();
-                    if (esDeLaApp(u)) web.loadUrl(u.toString()); else abrirFuera(u);
+                    if (debeAbrirseFuera(u)) abrirFuera(u); else web.loadUrl(u.toString());
                     v.destroy();
                     return true;
                 }
