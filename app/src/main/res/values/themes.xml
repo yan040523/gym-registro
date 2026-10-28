@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GymRegistro" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="android:statusBarColor">@color/tinta</item>
+        <item name="android:navigationBarColor">@color/tinta</item>
+        <item name="android:colorAccent">@color/acento</item>
+        <item name="android:colorPrimary">@color/tinta</item>
+    </style>
+</resources>

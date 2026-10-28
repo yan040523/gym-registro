@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fondo">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ProgressBar
+        android:id="@+id/progreso"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progressTint="@color/acento" />
+
+    <!-- Pantalla sin conexión -->
+    <LinearLayout
+        android:id="@+id/sinConexion"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/fondo"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+        <ImageView
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="@string/app_name" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="SIN CONEXIÓN"
+            android:textColor="@color/tinta"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="No se pudo abrir el registro del gimnasio. Revisa los datos móviles o el Wi‑Fi y vuelve a intentarlo."
+            android:textColor="@color/gris"
+            android:textSize="16sp" />
+        <Button
+            android:id="@+id/reintentar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/btn_bg"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:text="Reintentar"
+            android:textColor="@color/blanco"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Pantalla para pegar el enlace (solo si no está configurado) -->
+    <LinearLayout
+        android:id="@+id/configurar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/fondo"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:visibility="gone">
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="@string/app_name" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="CONECTA TU GIMNASIO"
+            android:textColor="@color/tinta"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Pega el enlace de la plataforma que te dio el administrador. Solo se pide una vez."
+            android:textColor="@color/gris"
+            android:textSize="16sp" />
+        <EditText
+            android:id="@+id/enlace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/input_bg"
+            android:hint="https://script.google.com/macros/s/…/exec"
+            android:inputType="textUri"
+            android:padding="14dp"
+            android:textColor="@color/tinta"
+            android:textSize="15sp" />
+        <Button
+            android:id="@+id/guardarEnlace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/btn_bg"
+            android:text="Guardar y abrir"
+            android:textColor="@color/blanco"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Botón para escanear el QR del carné -->
+    <ImageButton
+        android:id="@+id/escanear"
+        android:layout_width="54dp"
+        android:layout_height="54dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="92dp"
+        android:background="@drawable/fab_bg"
+        android:elevation="6dp"
+        android:src="@drawable/ic_qr"
+        android:contentDescription="Escanear carné de cliente" />
+</FrameLayout>

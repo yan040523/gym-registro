@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+def numeroCompilacion = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+
+android {
+    namespace 'com.gymregistro.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.gymregistro.app"
+        minSdk 24
+        targetSdk 34
+        versionCode numeroCompilacion
+        versionName "1.0.${numeroCompilacion}"
+    }
+
+    // Firma fija: así cada APK nuevo se instala encima del anterior sin borrar nada.
+    signingConfigs {
+        gym {
+            storeFile file("gymregistro.keystore")
+            storePassword "GymRegistro2026"
+            keyAlias "gymregistro"
+            keyPassword "GymRegistro2026"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.gym
+        }
+        debug {
+            signingConfig signingConfigs.gym
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+}

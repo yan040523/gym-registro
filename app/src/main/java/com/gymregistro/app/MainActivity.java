@@ -1,0 +1,328 @@
+package com.gymregistro.app;
+
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Message;
+import android.text.TextUtils;
+import android.view.View;
+import android.webkit.CookieManager;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.Toast;
+
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class MainActivity extends Activity {
+
+    private static final String PREFS = "gym_registro";
+    private static final String CLAVE_URL = "app_url";
+
+    private WebView web;
+    private ProgressBar progreso;
+    private LinearLayout sinConexion, configurar;
+    private ImageButton escanear;
+    private String urlBase = "";
+    private long ultimoAtras = 0;
+    private boolean errorPrincipal = false;
+
+    @SuppressLint("SetJavaScriptEnabled")
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        web = findViewById(R.id.web);
+        progreso = findViewById(R.id.progreso);
+        sinConexion = findViewById(R.id.sinConexion);
+        configurar = findViewById(R.id.configurar);
+        escanear = findViewById(R.id.escanear);
+
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setLoadWithOverviewMode(true);
+        s.setUseWideViewPort(true);
+        s.setTextZoom(100);
+        s.setSupportMultipleWindows(true);
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setMediaPlaybackRequiresUserGesture(true);
+
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        cm.setAcceptThirdPartyCookies(web, true);
+
+        web.setWebViewClient(new ClienteWeb());
+        web.setWebChromeClient(new ClienteChrome());
+
+        findViewById(R.id.reintentar).setOnClickListener(v -> cargarInicio());
+        ((Button) findViewById(R.id.guardarEnlace)).setOnClickListener(v -> guardarEnlace());
+        escanear.setOnClickListener(v -> abrirEscaner());
+        escanear.setOnLongClickListener(v -> { pedirCambioEnlace(); return true; });
+
+        urlBase = leerUrlBase();
+        if (TextUtils.isEmpty(urlBase)) {
+            mostrarConfigurar();
+        } else if (savedInstanceState != null) {
+            web.restoreState(savedInstanceState);
+        } else {
+            cargarInicio();
+        }
+    }
+
+    /* ---------- Enlace de la plataforma ---------- */
+    private String leerUrlBase() {
+        String guardada = getSharedPreferences(PREFS, MODE_PRIVATE).getString(CLAVE_URL, "");
+        if (!TextUtils.isEmpty(guardada)) return guardada;
+        return getString(R.string.app_url).trim();
+    }
+
+    private String urlInicio() {
+        String gym = getString(R.string.gym_code).trim().toUpperCase();
+        if (TextUtils.isEmpty(gym) || urlBase.contains("?")) return urlBase;
+        return urlBase + "?g=" + Uri.encode(gym);
+    }
+
+    private boolean enlaceValido(String u) {
+        return u.startsWith("https://script.google.com/") && u.contains("/exec");
+    }
+
+    private void guardarEnlace() {
+        String u = ((EditText) findViewById(R.id.enlace)).getText().toString().trim();
+        int q = u.indexOf('?');
+        String base = q >= 0 ? u.substring(0, q) : u;
+        if (!enlaceValido(base)) {
+            Toast.makeText(this, "El enlace debe empezar por https://script.google.com/ y terminar en /exec", Toast.LENGTH_LONG).show();
+            return;
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(CLAVE_URL, base).apply();
+        urlBase = base;
+        configurar.setVisibility(View.GONE);
+        if (q >= 0) cargar(u); else cargarInicio();
+    }
+
+    private void mostrarConfigurar() {
+        configurar.setVisibility(View.VISIBLE);
+        sinConexion.setVisibility(View.GONE);
+        escanear.setVisibility(View.GONE);
+        ((EditText) findViewById(R.id.enlace)).setText(urlBase);
+    }
+
+    private void pedirCambioEnlace() {
+        new AlertDialog.Builder(this)
+                .setTitle("Cambiar enlace de la plataforma")
+                .setMessage("¿Quieres pegar otro enlace? Úsalo solo si el administrador te dio uno nuevo.")
+                .setPositiveButton("Cambiar", (d, w) -> mostrarConfigurar())
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /* ---------- Carga y red ---------- */
+    private void cargarInicio() {
+        cargar(urlInicio());
+    }
+
+    private void cargar(String url) {
+        if (!hayInternet()) {
+            mostrarSinConexion();
+            return;
+        }
+        errorPrincipal = false;
+        sinConexion.setVisibility(View.GONE);
+        escanear.setVisibility(View.VISIBLE);
+        web.loadUrl(url);
+    }
+
+    private void mostrarSinConexion() {
+        sinConexion.setVisibility(View.VISIBLE);
+        escanear.setVisibility(View.GONE);
+        progreso.setVisibility(View.GONE);
+    }
+
+    private boolean hayInternet() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return true;
+        NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        return nc != null && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    /** Las páginas de Google Apps Script se quedan dentro de la app; el resto (WhatsApp, Sheets, etc.) se abre fuera. */
+    private boolean esDeLaApp(Uri u) {
+        String esquema = u.getScheme(), host = u.getHost();
+        if (esquema == null || host == null) return false;
+        if (!esquema.equals("https") && !esquema.equals("http")) return false;
+        return host.equals("script.google.com")
+                || host.endsWith(".googleusercontent.com")
+                || host.equals("accounts.google.com")
+                || host.equals("www.google.com");
+    }
+
+    private void abrirFuera(Uri u) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, u));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No hay ninguna app para abrir este enlace.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private class ClienteWeb extends WebViewClient {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            Uri u = request.getUrl();
+            if (esDeLaApp(u)) return false;
+            abrirFuera(u);
+            return true;
+        }
+
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            progreso.setVisibility(View.VISIBLE);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            progreso.setVisibility(View.GONE);
+            if (!errorPrincipal) sinConexion.setVisibility(View.GONE);
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            if (request.isForMainFrame()) {
+                errorPrincipal = true;
+                mostrarSinConexion();
+            }
+        }
+    }
+
+    private class ClienteChrome extends WebChromeClient {
+        @Override
+        public void onProgressChanged(WebView view, int nuevo) {
+            progreso.setProgress(nuevo);
+        }
+
+        /** Enlaces con target="_blank" (WhatsApp, hoja de Google): se capturan y se abren fuera de la app. */
+        @Override
+        public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+            WebView temporal = new WebView(MainActivity.this);
+            temporal.setWebViewClient(new WebViewClient() {
+                @Override
+                public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
+                    Uri u = request.getUrl();
+                    if (esDeLaApp(u)) web.loadUrl(u.toString()); else abrirFuera(u);
+                    v.destroy();
+                    return true;
+                }
+            });
+            WebView.WebViewTransport transporte = (WebView.WebViewTransport) resultMsg.obj;
+            transporte.setWebView(temporal);
+            resultMsg.sendToTarget();
+            return true;
+        }
+    }
+
+    /* ---------- Escáner del carné ---------- */
+    private void abrirEscaner() {
+        IntentIntegrator ii = new IntentIntegrator(this);
+        ii.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
+        ii.setPrompt("Apunta al código QR del carné del cliente");
+        ii.setBeepEnabled(true);
+        ii.setOrientationLocked(false);
+        ii.initiateScan();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        IntentResult r = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if (r == null) {
+            super.onActivityResult(requestCode, resultCode, data);
+            return;
+        }
+        if (r.getContents() == null) return; // cancelado
+        abrirCarne(r.getContents().trim());
+    }
+
+    private void abrirCarne(String texto) {
+        // Caso 1: el QR trae el enlace completo de la plataforma (…/exec?g=IRON&c=GM-XXXXXX)
+        if (texto.startsWith("https://script.google.com/") && texto.contains("c=")) {
+            cargar(texto);
+            return;
+        }
+        // Caso 2: el QR trae solo "GIMNASIO CODIGO", por ejemplo "IRON GM-7K4QX9"
+        Matcher m = Pattern.compile("^([A-Z0-9]{3,12})\\s+(GM-[A-Z0-9]{6})$").matcher(texto.toUpperCase());
+        if (m.find() && !TextUtils.isEmpty(urlBase)) {
+            cargar(urlBase + "?g=" + m.group(1) + "&c=" + m.group(2));
+            return;
+        }
+        Toast.makeText(this, "Este QR no es un carné de cliente del gimnasio.", Toast.LENGTH_LONG).show();
+    }
+
+    /* ---------- Botón atrás y ciclo de vida ---------- */
+    @Override
+    public void onBackPressed() {
+        if (configurar.getVisibility() == View.VISIBLE && !TextUtils.isEmpty(urlBase)) {
+            configurar.setVisibility(View.GONE);
+            escanear.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (web.canGoBack()) {
+            web.goBack();
+            return;
+        }
+        long ahora = System.currentTimeMillis();
+        if (ahora - ultimoAtras < 2000) {
+            super.onBackPressed();
+        } else {
+            ultimoAtras = ahora;
+            Toast.makeText(this, "Pulsa atrás otra vez para salir", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        web.saveState(outState);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        web.onPause();
+        CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        web.onResume();
+    }
+
+    @Override
+    protected void onDestroy() {
+        web.destroy();
+        super.onDestroy();
+    }
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      ✏️ CONFIGURA AQUÍ TU APP
+      app_url: pega el enlace de tu aplicación web de Google Apps Script (termina en /exec).
+               Si lo dejas vacío, la app lo pedirá la primera vez que se abra.
+      gym_code: (opcional) código de un gimnasio, por ejemplo TITAN. Si lo pones, la app
+                abrirá con ese gimnasio ya escrito. Déjalo vacío para una app que sirva a todos.
+    -->
+    <string name="app_url" translatable="false">https://script.google.com/macros/s/AKfycbzFkRZIU61uQK2SyvJ3m7207HsxHqH5hCm68YqUu6qGl_bgWvwYZeng7sstLS7OvwixYg/exec</string>
+    <string name="gym_code" translatable="false"></string>
+</resources>
