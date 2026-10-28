@@ -56,6 +56,9 @@ public class MainActivity extends Activity {
     private boolean errorPrincipal = false;
     /** Código escaneado esperando a que la página lo recoja (GymApp.tomarCodigo). */
     private volatile String codigoPendiente = "";
+    /** Botón atrás pendiente de que la página lo atienda (GymApp.tomarAtras). */
+    private volatile boolean atrasPendiente = false;
+    private volatile long ultimaConsultaAtras = 0;
     private final android.os.Handler manejador = new android.os.Handler(android.os.Looper.getMainLooper());
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -172,6 +175,21 @@ public class MainActivity extends Activity {
             String c = codigoPendiente;
             codigoPendiente = "";
             return c;
+        }
+
+        /** La página pregunta si se pulsó el botón atrás del teléfono. */
+        @JavascriptInterface
+        public boolean tomarAtras() {
+            ultimaConsultaAtras = System.currentTimeMillis();
+            boolean a = atrasPendiente;
+            atrasPendiente = false;
+            return a;
+        }
+
+        /** La página estaba ya en el Inicio: no tiene adónde volver. */
+        @JavascriptInterface
+        public void atrasNoManejado() {
+            runOnUiThread(MainActivity.this::salirConDobleAtras);
         }
 
         /** La página (por ejemplo, el modo puerta) pide abrir la cámara. */
@@ -414,13 +432,24 @@ public class MainActivity extends Activity {
             escanear.setVisibility(View.VISIBLE);
             return;
         }
-        if (web.canGoBack()) {
-            web.goBack();
+        if (sinConexion.getVisibility() == View.VISIBLE) {
+            salirConDobleAtras();
             return;
         }
+        // La página decide: cierra una ventana, sale del modo puerta o vuelve a la pantalla anterior.
+        // Se le avisa por el puente (la página consulta cada 200 ms). Si la página no está
+        // escuchando (por ejemplo, aún cargando), se usa el doble toque para salir.
+        if (System.currentTimeMillis() - ultimaConsultaAtras < 1500) {
+            atrasPendiente = true;
+        } else {
+            salirConDobleAtras();
+        }
+    }
+
+    private void salirConDobleAtras() {
         long ahora = System.currentTimeMillis();
         if (ahora - ultimoAtras < 2000) {
-            super.onBackPressed();
+            finish();
         } else {
             ultimoAtras = ahora;
             Toast.makeText(this, "Pulsa atrás otra vez para salir", Toast.LENGTH_SHORT).show();
