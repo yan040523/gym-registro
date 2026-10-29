@@ -373,7 +373,7 @@ public class MainActivity extends Activity {
     private void abrirEscaner() {
         IntentIntegrator ii = new IntentIntegrator(this);
         ii.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
-        ii.setPrompt("Apunta al código QR del carné del cliente");
+        ii.setPrompt("Apunta al QR del carné del gimnasio o del carnet de identidad");
         ii.setBeepEnabled(true);
         ii.setOrientationLocked(false);
         ii.initiateScan();
@@ -421,7 +421,7 @@ public class MainActivity extends Activity {
             cargar(urlBase + "?g=" + m.group(1) + "&c=" + m.group(2));
             return;
         }
-        Toast.makeText(this, "Este QR no es un carné de cliente del gimnasio.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "No se pudo leer el código. Abre la app, entra con tu usuario y vuelve a escanear.", Toast.LENGTH_LONG).show();
     }
 
     /* ---------- Botón atrás y ciclo de vida ---------- */
