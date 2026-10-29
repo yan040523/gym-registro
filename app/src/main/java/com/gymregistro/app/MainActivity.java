@@ -36,8 +36,21 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.view.HapticFeedbackConstants;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.ResultPoint;
+import com.journeyapps.barcodescanner.BarcodeCallback;
+import com.journeyapps.barcodescanner.BarcodeResult;
+import com.journeyapps.barcodescanner.BarcodeView;
+import com.journeyapps.barcodescanner.DefaultDecoderFactory;
+
+import java.util.Collections;
+import java.util.List;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,6 +69,11 @@ public class MainActivity extends Activity {
     private boolean errorPrincipal = false;
     /** Código escaneado esperando a que la página lo recoja (GymApp.tomarCodigo). */
     private volatile String codigoPendiente = "";
+    private View panelEscaner, lineaEscaner;
+    private BarcodeView barcode;
+    private ObjectAnimator animLinea;
+    private boolean botonQRQuerido = true;
+    private static final int PERMISO_CAMARA = 78;
     /** Botón atrás pendiente de que la página lo atienda (GymApp.tomarAtras). */
     private volatile boolean atrasPendiente = false;
     private volatile long ultimaConsultaAtras = 0;
@@ -72,6 +90,11 @@ public class MainActivity extends Activity {
         sinConexion = findViewById(R.id.sinConexion);
         configurar = findViewById(R.id.configurar);
         escanear = findViewById(R.id.escanear);
+        panelEscaner = findViewById(R.id.panelEscaner);
+        barcode = findViewById(R.id.barcode);
+        lineaEscaner = findViewById(R.id.lineaEscaner);
+        barcode.setDecoderFactory(new DefaultDecoderFactory(Collections.singletonList(BarcodeFormat.QR_CODE)));
+        findViewById(R.id.cancelarEscaner).setOnClickListener(v -> cerrarEscaner());
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -200,7 +223,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void mostrarBotonQR(boolean visible) {
-            runOnUiThread(() -> escanear.setVisibility(visible && configurar.getVisibility() != View.VISIBLE ? View.VISIBLE : View.GONE));
+            runOnUiThread(() -> { botonQRQuerido = visible; actualizarBotonQR(); });
         }
     }
 
@@ -270,7 +293,7 @@ public class MainActivity extends Activity {
         }
         errorPrincipal = false;
         sinConexion.setVisibility(View.GONE);
-        escanear.setVisibility(View.VISIBLE);
+        actualizarBotonQR();
         web.loadUrl(url);
     }
 
@@ -369,25 +392,75 @@ public class MainActivity extends Activity {
         }
     }
 
-    /* ---------- Escáner del carné ---------- */
+    /* ---------- Escáner en un cuadro, dentro de la app y en vertical ---------- */
+    private boolean escanerAbierto() {
+        return panelEscaner.getVisibility() == View.VISIBLE;
+    }
+
+    private void actualizarBotonQR() {
+        boolean ver = botonQRQuerido && !escanerAbierto() && configurar.getVisibility() != View.VISIBLE
+                && sinConexion.getVisibility() != View.VISIBLE;
+        escanear.setVisibility(ver ? View.VISIBLE : View.GONE);
+    }
+
     private void abrirEscaner() {
-        IntentIntegrator ii = new IntentIntegrator(this);
-        ii.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
-        ii.setPrompt("Apunta al QR del carné del gimnasio o del carnet de identidad");
-        ii.setBeepEnabled(true);
-        ii.setOrientationLocked(false);
-        ii.initiateScan();
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, PERMISO_CAMARA);
+            return;
+        }
+        if (escanerAbierto()) return;
+        panelEscaner.setVisibility(View.VISIBLE);
+        actualizarBotonQR();
+        barcode.resume();
+        barcode.decodeSingle(new BarcodeCallback() {
+            @Override
+            public void barcodeResult(BarcodeResult result) {
+                if (result == null || result.getText() == null) return;
+                avisoLectura();
+                cerrarEscaner();
+                abrirCarne(result.getText().trim());
+            }
+
+            @Override
+            public void possibleResultPoints(List<ResultPoint> resultPoints) { }
+        });
+        // Línea roja que sube y baja dentro del cuadro
+        lineaEscaner.post(() -> {
+            float alto = ((View) lineaEscaner.getParent()).getHeight();
+            animLinea = ObjectAnimator.ofFloat(lineaEscaner, "translationY", alto * 0.12f, alto * 0.88f);
+            animLinea.setDuration(1600);
+            animLinea.setRepeatMode(ValueAnimator.REVERSE);
+            animLinea.setRepeatCount(ValueAnimator.INFINITE);
+            animLinea.start();
+        });
+    }
+
+    private void cerrarEscaner() {
+        if (!escanerAbierto()) return;
+        barcode.pause();
+        if (animLinea != null) animLinea.cancel();
+        panelEscaner.setVisibility(View.GONE);
+        actualizarBotonQR();
+    }
+
+    private void avisoLectura() {
+        try {
+            panelEscaner.performHapticFeedback(Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.LONG_PRESS);
+            ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70);
+            tg.startTone(ToneGenerator.TONE_PROP_BEEP, 120);
+            manejador.postDelayed(tg::release, 400);
+        } catch (Exception ignored) { }
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        IntentResult r = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-        if (r == null) {
-            super.onActivityResult(requestCode, resultCode, data);
-            return;
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != PERMISO_CAMARA) return;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            abrirEscaner();
+        } else {
+            Toast.makeText(this, "Sin permiso de cámara no se puede escanear. Actívalo en Ajustes > Apps > Gym Registro > Permisos.", Toast.LENGTH_LONG).show();
         }
-        if (r.getContents() == null) return; // cancelado
-        abrirCarne(r.getContents().trim());
     }
 
     private void abrirCarne(String texto) {
@@ -427,9 +500,13 @@ public class MainActivity extends Activity {
     /* ---------- Botón atrás y ciclo de vida ---------- */
     @Override
     public void onBackPressed() {
+        if (escanerAbierto()) {
+            cerrarEscaner();
+            return;
+        }
         if (configurar.getVisibility() == View.VISIBLE && !TextUtils.isEmpty(urlBase)) {
             configurar.setVisibility(View.GONE);
-            escanear.setVisibility(View.VISIBLE);
+            actualizarBotonQR();
             return;
         }
         if (sinConexion.getVisibility() == View.VISIBLE) {
@@ -465,6 +542,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (escanerAbierto()) barcode.pause();
         web.onPause();
         CookieManager.getInstance().flush();
     }
@@ -472,6 +550,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (escanerAbierto()) barcode.resume();
         web.onResume();
     }
 

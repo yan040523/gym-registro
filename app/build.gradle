@@ -45,6 +45,7 @@ android {
 dependencies {
     // Escáner de QR y la librería de Android que necesita para pedir permiso de cámara
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+    implementation 'com.google.zxing:core:3.4.1'
     implementation 'androidx.core:core:1.13.1'
     // Revisión automática de pagos en segundo plano (notificaciones)
     implementation 'androidx.work:work-runtime:2.9.1'
